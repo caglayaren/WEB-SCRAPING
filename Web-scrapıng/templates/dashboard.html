@@ -1,0 +1,424 @@
+{% extends "base.html" %}
+
+{% block header_actions %}
+<button id="refresh-btn" onclick="manualScrape()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition duration-200">
+    <i class="fas fa-sync-alt mr-2"></i>Refresh News
+</button>
+<div class="text-sm text-gray-600">
+    Last updated: <span id="last-updated">{{ stats.get('last_updated', 'Never') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-6">
+    <!-- Debug Info (geçici) -->
+    <div class="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded mb-4">
+        <strong>Debug:</strong> 
+        Total articles: {{ stats.total_articles }}, 
+        Sources: {{ stats.all_articles_by_source }},
+        Selected: {{ selected_sources }}
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <!-- Sidebar Filters -->
+        <div class="lg:col-span-1">
+            <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                <h3 class="text-lg font-semibold mb-4">
+                    <i class="fas fa-filter mr-2"></i>Filters
+                </h3>
+                
+                <!-- Sources Filter -->
+                <div class="mb-6">
+                    <h4 class="font-medium text-gray-700 mb-2">Sources</h4>
+                    <div class="space-y-2">
+                        <label class="flex items-center">
+                            <input type="checkbox" name="sources" value="BBC News" class="mr-2" 
+                                   {{ 'checked' if 'BBC News' in selected_sources else '' }}>
+                            <span class="text-sm">BBC News ({{ stats.all_articles_by_source.get('BBC News', 0) }})</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" name="sources" value="CNN" class="mr-2"
+                                   {{ 'checked' if 'CNN' in selected_sources else '' }}>
+                            <span class="text-sm">CNN ({{ stats.all_articles_by_source.get('CNN', 0) }})</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" name="sources" value="Reuters" class="mr-2"
+                                   {{ 'checked' if 'Reuters' in selected_sources else '' }}>
+                            <span class="text-sm">Reuters ({{ stats.all_articles_by_source.get('Reuters', 0) }})</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Categories Filter -->
+                <div class="mb-6">
+                    <h4 class="font-medium text-gray-700 mb-2">Categories</h4>
+                    <div class="space-y-2">
+                        {% for category in ['World', 'Technology', 'Business', 'Politics', 'Health', 'Science', 'General'] %}
+                        <label class="flex items-center">
+                            <input type="checkbox" name="categories" value="{{ category.lower() }}" class="mr-2"
+                                   {{ 'checked' if category.lower() in selected_categories else '' }}>
+                            <span class="text-sm">{{ category }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- Keywords Filter -->
+                <div class="mb-6">
+                    <h4 class="font-medium text-gray-700 mb-2">Keywords</h4>
+                    <input type="text" id="keywords" placeholder="AI, climate, politics..." 
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                           value="{{ keywords }}">
+                    <p class="text-xs text-gray-500 mt-1">Separate keywords with commas</p>
+                </div>
+
+                <button onclick="applyFilters()" class="w-full bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-lg transition duration-200">
+                    <i class="fas fa-search mr-2"></i>Apply Filters
+                </button>
+                
+                <!-- Clear Filters -->
+                <button onclick="clearFilters()" class="w-full bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-lg transition duration-200 mt-2">
+                    <i class="fas fa-times mr-2"></i>Clear All
+                </button>
+            </div>
+
+            <!-- Statistics -->
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <h3 class="text-lg font-semibold mb-4">
+                    <i class="fas fa-chart-bar mr-2"></i>Statistics
+                </h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Total Articles:</span>
+                        <span class="font-medium text-lg">{{ stats.total_articles }}</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Last 24h:</span>
+                        <span class="font-medium text-lg text-green-600">{{ stats.recent_articles }}</span>
+                    </div>
+                    
+                    {% if stats.articles_by_source %}
+                    <div class="mt-4">
+                        <h5 class="text-sm font-medium text-gray-700 mb-2">Sources (24h):</h5>
+                        {% for source, count in stats.articles_by_source.items() %}
+                        <div class="flex justify-between text-xs">
+                            <span>{{ source }}:</span>
+                            <span>{{ count }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="lg:col-span-3">
+            <!-- Category Tabs -->
+            {% if articles_by_category %}
+            <div class="bg-white rounded-lg shadow-sm mb-6">
+                <div class="flex flex-wrap border-b">
+                    <button class="category-tab px-4 py-3 text-sm font-medium transition duration-200 active" 
+                            onclick="showCategory('all')">
+                        <i class="fas fa-globe mr-1"></i>All Categories
+                    </button>
+                    {% for category in articles_by_category.keys() %}
+                    <button class="category-tab px-4 py-3 text-sm font-medium transition duration-200" 
+                            onclick="showCategory('{{ category }}')">
+                        <i class="fas fa-tag mr-1"></i>{{ category.title() }}
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Articles -->
+            <div id="articles-container">
+                {% if articles_by_category %}
+                    {% for category, articles in articles_by_category.items() %}
+                    <div class="category-section mb-8" data-category="{{ category }}">
+                        <h2 class="text-xl font-bold text-gray-800 mb-4 capitalize flex items-center">
+                            <i class="fas fa-newspaper mr-2 text-blue-500"></i>
+                            {{ category }} ({{ articles|length }} articles)
+                        </h2>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {% for article in articles %}
+                            <div class="article-card bg-white rounded-lg shadow-sm hover:shadow-md p-6 border-l-4 
+                                        {% if article.source == 'BBC News' %}border-red-500
+                                        {% elif article.source == 'CNN' %}border-blue-500
+                                        {% elif article.source == 'Reuters' %}border-orange-500
+                                        {% else %}border-gray-500{% endif %}">
+                                <div class="flex items-start justify-between mb-3">
+                                    <span class="source-badge 
+                                                {% if article.source == 'BBC News' %}bg-red-100 text-red-800
+                                                {% elif article.source == 'CNN' %}bg-blue-100 text-blue-800
+                                                {% elif article.source == 'Reuters' %}bg-orange-100 text-orange-800
+                                                {% else %}bg-gray-100 text-gray-800{% endif %} 
+                                                rounded-full font-medium">
+                                        {{ article.source }}
+                                    </span>
+                                    <span class="text-xs text-gray-500">
+                                        {% if article.created_at %}
+                                            {{ article.created_at[:16] }}
+                                        {% else %}
+                                            Recently
+                                        {% endif %}
+                                    </span>
+                                </div>
+                                
+                                <h3 class="text-lg font-semibold text-gray-800 mb-2 line-clamp-2">
+                                    <a href="{{ article.url }}" target="_blank" class="hover:text-blue-600 transition duration-200">
+                                        {{ article.title }}
+                                    </a>
+                                </h3>
+                                
+                                {% if article.summary %}
+                                <p class="text-gray-600 text-sm mb-3 line-clamp-3">
+                                    {{ article.summary }}
+                                </p>
+                                {% endif %}
+                                
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center space-x-2">
+                                        <span class="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded">
+                                            <i class="fas fa-tag mr-1"></i>{{ article.category.title() }}
+                                        </span>
+                                        {% if article.author %}
+                                        <span class="text-xs text-gray-500">
+                                            <i class="fas fa-user mr-1"></i>{{ article.author }}
+                                        </span>
+                                        {% endif %}
+                                    </div>
+                                    <a href="{{ article.url }}" target="_blank" 
+                                       class="text-blue-500 hover:text-blue-700 text-sm font-medium flex items-center">
+                                        Read More <i class="fas fa-external-link-alt ml-1"></i>
+                                    </a>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <!-- No articles message -->
+                    <div class="text-center py-12 bg-white rounded-lg shadow-sm">
+                        <i class="fas fa-newspaper text-6xl text-gray-300 mb-4"></i>
+                        <h3 class="text-xl font-medium text-gray-600 mb-2">No articles found</h3>
+                        <p class="text-gray-500 mb-4">Try adjusting your filters or refresh the news to get the latest articles.</p>
+                        <button onclick="clearFilters()" class="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-lg transition duration-200 mr-2">
+                            <i class="fas fa-times mr-2"></i>Clear Filters
+                        </button>
+                        <button onclick="manualScrape()" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg transition duration-200">
+                            <i class="fas fa-sync-alt mr-2"></i>Refresh News
+                        </button>
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- Loading indicator -->
+            <div id="loading" class="hidden text-center py-8">
+                <i class="fas fa-spinner loading-spinner text-3xl text-blue-500 mb-4"></i>
+                <p class="text-gray-600">Loading news articles...</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Category filtering
+    function showCategory(category) {
+        const sections = document.querySelectorAll('.category-section');
+        const tabs = document.querySelectorAll('.category-tab');
+        
+        // Remove active class from all tabs
+        tabs.forEach(tab => tab.classList.remove('active'));
+        
+        // Add active class to clicked tab
+        const clickedTab = event.target.closest('button');
+        clickedTab.classList.add('active');
+        
+        // Show/hide sections
+        sections.forEach(section => {
+            if (category === 'all' || section.dataset.category === category) {
+                section.style.display = 'block';
+            } else {
+                section.style.display = 'none';
+            }
+        });
+    }
+
+    // Apply filters - DÜZELTİLMİŞ VERSİYON
+    function applyFilters() {
+        console.log('Applying filters...');
+        
+        // Get selected sources
+        const sources = Array.from(document.querySelectorAll('input[name="sources"]:checked'))
+                            .map(cb => cb.value);
+        console.log('Selected sources:', sources);
+        
+        // Get selected categories  
+        const categories = Array.from(document.querySelectorAll('input[name="categories"]:checked'))
+                              .map(cb => cb.value);
+        console.log('Selected categories:', categories);
+        
+        // Get keywords
+        const keywords = document.getElementById('keywords').value;
+        console.log('Keywords:', keywords);
+
+        // Build URL parameters
+        const params = new URLSearchParams();
+        
+        // Add sources
+        sources.forEach(source => params.append('sources', source));
+        
+        // Add categories
+        categories.forEach(category => params.append('categories', category));
+        
+        // Add keywords
+        if (keywords.trim()) {
+            params.append('keywords', keywords.trim());
+        }
+
+        // Redirect with filters
+        const newUrl = '/?' + params.toString();
+        console.log('Redirecting to:', newUrl);
+        window.location.href = newUrl;
+    }
+
+    // Clear filters
+    function clearFilters() {
+        console.log('Clearing all filters...');
+        window.location.href = '/';
+    }
+
+    // Manual scrape - İyileştirilmiş
+    async function manualScrape() {
+        const button = document.getElementById('refresh-btn');
+        const originalContent = button.innerHTML;
+        
+        try {
+            // Loading state
+            button.innerHTML = '<i class="fas fa-spinner loading-spinner mr-2"></i>Loading...';
+            button.disabled = true;
+
+            console.log('Starting manual scrape...');
+            
+            const response = await fetch('/api/scrape', { 
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            console.log('Response status:', response.status);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            console.log('Scrape result:', result);
+            
+            if (result.success) {
+                showNotification(`Successfully scraped ${result.total_articles} articles (${result.new_articles} new)`, 'success');
+                setTimeout(() => location.reload(), 2000);
+            } else {
+                showNotification('Scraping failed: ' + result.error, 'error');
+            }
+        } catch (error) {
+            console.error('Scraping error:', error);
+            showNotification('Scraping failed: ' + error.message, 'error');
+        } finally {
+            // Reset button
+            button.innerHTML = originalContent;
+            button.disabled = false;
+        }
+    }
+
+    // Auto-refresh stats every 30 minutes
+    setInterval(async () => {
+        try {
+            const response = await fetch('/api/stats');
+            const stats = await response.json();
+            
+            // Update last updated time
+            const lastUpdatedEl = document.getElementById('last-updated');
+            if (lastUpdatedEl && stats.last_updated) {
+                lastUpdatedEl.textContent = stats.last_updated;
+            }
+            
+            console.log('Stats updated:', stats);
+        } catch (error) {
+            console.error('Failed to update stats:', error);
+        }
+    }, 30 * 60 * 1000);
+
+    // Handle Enter key in keywords input
+    document.getElementById('keywords').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            applyFilters();
+        }
+    });
+
+    // Real-time category filtering (bonus feature)
+    function filterCategoriesRealTime() {
+        const selectedCategories = Array.from(document.querySelectorAll('input[name="categories"]:checked'))
+                                      .map(cb => cb.value);
+        
+        const allSections = document.querySelectorAll('.category-section');
+        
+        if (selectedCategories.length === 0) {
+            // Show all if none selected
+            allSections.forEach(section => section.style.display = 'block');
+        } else {
+            // Show only selected categories
+            allSections.forEach(section => {
+                const category = section.dataset.category.toLowerCase();
+                if (selectedCategories.includes(category)) {
+                    section.style.display = 'block';
+                } else {
+                    section.style.display = 'none';
+                }
+            });
+        }
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('Dashboard loaded successfully');
+        
+        // Debug: Show current articles count
+        const articleCards = document.querySelectorAll('.article-card');
+        console.log(`Total article cards on page: ${articleCards.length}`);
+        
+        // Add event listeners to category checkboxes for real-time filtering
+        document.querySelectorAll('input[name="categories"]').forEach(checkbox => {
+            checkbox.addEventListener('change', filterCategoriesRealTime);
+        });
+        
+        // Debug: Show current URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        console.log('Current URL parameters:', Object.fromEntries(urlParams));
+    });
+
+    // Test function - console'dan çağırabilirsin
+    function testFilters() {
+        console.log('=== FILTER TEST ===');
+        
+        const sources = Array.from(document.querySelectorAll('input[name="sources"]:checked'))
+                            .map(cb => cb.value);
+        const categories = Array.from(document.querySelectorAll('input[name="categories"]:checked'))
+                              .map(cb => cb.value);
+        const keywords = document.getElementById('keywords').value;
+        
+        console.log('Sources:', sources);
+        console.log('Categories:', categories);
+        console.log('Keywords:', keywords);
+        
+        return { sources, categories, keywords };
+    }
+</script>
+{% endblock %}
